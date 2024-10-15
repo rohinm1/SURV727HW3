@@ -1,0 +1,94 @@
+---
+title: "Assignment 3 SURV727"
+author: "Quentin Hoglund and Rohin Mishra"
+date: "2024-10-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(xml2)
+library(rvest)
+library(tidyverse)
+library(tidytext)
+```
+
+# Webscraping
+```{r}
+url <- "https://en.wikipedia.org/wiki/Grand_Boulevard,_Chicago"
+page <- read_html(url)
+tables <- page %>% html_table(fill = TRUE)
+str(tables)
+pop <- tables[[2]]
+pop <- pop[2:10, -3]  
+print(pop)
+```
+
+# Expanding to More Pages
+```{r}
+places_east <- c("Oakland,_Chicago", "Kenwood,_Chicago", "Hyde_Park,_Chicago")
+pops <- pop 
+for (place in places_east) {
+  url <- paste0("https://en.wikipedia.org/wiki/", place)
+  page <- read_html(url)
+  tables <- page %>% html_table(fill = TRUE)
+  if (length(tables) >= 2) {
+    pop_new <- tables[[2]]
+    if (nrow(pop_new) >= 10 && ncol(pop_new) >= 3) {
+      pop_new <- pop_new[2:10, -3]  # Clean the new population table
+    } else {
+      print(paste("The population table for", place, "does not have the expected structure. Skipping..."))
+      next
+    }
+    pops <- cbind(pops, pop_new)
+  } else {
+    print(paste("No population table found for", place, "Skipping..."))
+    next
+  }
+}
+
+print(pops)
+```
+
+# Scraping and Analyzing Text Data
+```{r}
+descriptions <- tibble(location = character(), text = character())
+for (place in places_east) {
+  url <- paste0("https://en.wikipedia.org/wiki/", place)
+  page <- read_html(url)
+  description <- page %>% 
+    html_nodes(xpath = "//div[@id='bodyContent']//p") %>% 
+    html_text() %>% 
+    paste(collapse = ' ')
+  descriptions <- descriptions %>% add_row(location = place, text = description)
+}
+descriptions_tokens <- descriptions %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+common_words <- descriptions_tokens %>%
+  count(word, sort = TRUE)
+
+print("Most Common Words:")
+print(common_words)
+
+descriptions_tokens %>%
+  count(location, word, sort = TRUE) %>%
+  group_by(location) %>%
+  top_n(10, wt = n) %>%
+  ggplot(aes(x = reorder_within(word, n, location), y = n, fill = location)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ location, scales = "free_y") +
+  coord_flip() +
+  scale_x_reordered() +
+  labs(x = "Word", y = "Count", title = "Most Common Words by Location")
+```
+
+What are the most common words used overall?
+
+Overall, "park" is the most commonly used word alongside "hyde", "chicago", "kenwood", and "street".
+
+What are some of the similarities between the locations? What are some of the differences?
+
+Hyde Park has the most frequent word usage overall whereas Kenwood and Oakland seem to have very similar distributions. All of the locations have "street" and "chicago" in their most common word list. On the other hand, Hyde Park has a unique term in "university". We had a hunch that the University of Chicago might be there, which it is! Similarly, "housing" and "community" being related to Oakland indicates that it's moreso a residental area.
+
+
